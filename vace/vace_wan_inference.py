@@ -291,6 +291,10 @@ def main(args):
         print("="*60)
         logging.info(f"Using optimized WAN model with {args.optimization_mode} mode")
         
+        # Check if torch.compile is actually enabled (considering environment variable)
+        torch_compile_enabled = (opt_config['enable_torch_compile'] and 
+                                os.environ.get('TORCH_COMPILE_DISABLE', '0') != '1')
+        
         wan_vace = OptimizedWanVace(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
@@ -301,20 +305,22 @@ def main(args):
             use_usp=(args.ulysses_size > 1 or args.ring_size > 1),
             t5_cpu=args.t5_cpu,
             enable_flash_attn=opt_config['enable_flash_attention'],
-            enable_torch_compile=opt_config['enable_torch_compile']
+            enable_torch_compile=torch_compile_enabled  # Use the actual status
         )
         
         # Update offload setting based on optimization mode
         if args.offload_model is None:
             args.offload_model = opt_config.get('enable_cpu_offload', False)
         
-        # Print optimization configuration
+        # Print optimization configuration (check actual status)
         print("Active optimizations:")
         optimizations = []
         if opt_config['enable_flash_attention']:
             optimizations.append("Flash Attention 2")
-        if opt_config['enable_torch_compile']:
+        
+        if torch_compile_enabled:
             optimizations.append("torch.compile")
+        
         if opt_config['enable_xformers']:
             optimizations.append("xFormers")
         if opt_config['enable_cpu_offload']:
