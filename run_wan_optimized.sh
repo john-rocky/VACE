@@ -14,7 +14,7 @@ python -m vace.vace_wan_inference \
     --optimization_mode speed \
     --size 480p \
     --frame_num 81 \
-    --sample_steps 25 \
+    --sample_steps 50 \
     --save_dir results/optimized_speed/
 
 # メモリ優先モード（省メモリ）

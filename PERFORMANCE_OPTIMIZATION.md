@@ -11,6 +11,8 @@ This branch contains performance optimizations for the WAN video generation mode
 5. **CPU-GPU Sync Optimization**: Reduced synchronization overhead
 6. **Memory-Efficient Configurations**: Multiple optimization profiles
 
+**Note**: These optimizations maintain the same inference steps (50) to preserve video quality. Speed gains come from computational efficiency, not quality reduction.
+
 ## 📦 Installation
 
 ```bash
@@ -33,7 +35,7 @@ python -m vace.vace_pipeline \
     --optimization_mode speed \
     --task text2video \
     --prompt "your prompt" \
-    --num_inference_steps 25
+    --num_inference_steps 50  # Keep quality high
 
 # Memory-optimized generation (lowest VRAM usage)
 python -m vace.vace_pipeline \

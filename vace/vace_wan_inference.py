@@ -44,8 +44,7 @@ def validate_args(args):
 
     # The default sampling steps are 40 for image-to-video tasks and 50 for text-to-video tasks.
     if args.sample_steps is None:
-        # Use fewer steps when optimization is enabled
-        args.sample_steps = 25 if getattr(args, 'use_optimized', False) else 50
+        args.sample_steps = 50
 
     if args.sample_shift is None:
         args.sample_shift = 16
