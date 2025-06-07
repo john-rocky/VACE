@@ -43,12 +43,79 @@ class OptimizedWanVace(WanVace):
         if self.enable_torch_compile and hasattr(torch, 'compile'):
             self._prepare_torch_compile()
     
+    def _setup_comprehensive_tracing(self):
+        """Set up comprehensive tracing to see what functions are actually called"""
+        try:
+            import wan.modules.attention as wan_attn
+            
+            print("  → Setting up function call tracing...")
+            
+            # Get all callable attributes
+            all_functions = []
+            for attr_name in dir(wan_attn):
+                if not attr_name.startswith('_'):
+                    attr = getattr(wan_attn, attr_name)
+                    if callable(attr):
+                        all_functions.append(attr_name)
+            
+            print(f"  → Found functions to trace: {all_functions}")
+            
+            # Trace each function
+            for func_name in all_functions:
+                try:
+                    original_func = getattr(wan_attn, func_name)
+                    
+                    def make_tracer(name, orig_func):
+                        def traced_func(*args, **kwargs):
+                            print(f"🔍 {name} called!")
+                            if args and hasattr(args[0], 'shape'):
+                                shapes = [f"{arg.shape}" for arg in args[:3] if hasattr(arg, 'shape')]
+                                print(f"  → Input shapes: {shapes}")
+                            
+                            result = orig_func(*args, **kwargs)
+                            
+                            if hasattr(result, 'shape'):
+                                print(f"  → Output shape: {result.shape}")
+                            
+                            return result
+                        return traced_func
+                    
+                    setattr(wan_attn, func_name, make_tracer(func_name, original_func))
+                    
+                except Exception as e:
+                    print(f"  → Could not trace {func_name}: {e}")
+            
+            # Also trace PyTorch functions
+            try:
+                import torch.nn.functional as F
+                original_sdpa = F.scaled_dot_product_attention
+                
+                def traced_sdpa(*args, **kwargs):
+                    print("🔍 PyTorch scaled_dot_product_attention called!")
+                    if args:
+                        print(f"  → q,k,v shapes: {[arg.shape for arg in args[:3]]}")
+                    result = original_sdpa(*args, **kwargs)
+                    print(f"  → output shape: {result.shape}")
+                    return result
+                
+                F.scaled_dot_product_attention = traced_sdpa
+                print("  → Also tracing PyTorch scaled_dot_product_attention")
+                
+            except Exception as e:
+                print(f"  → Could not trace PyTorch attention: {e}")
+                
+        except Exception as e:
+            print(f"  → Tracing setup failed: {e}")
+    
     def _enable_flash_attention(self):
         """Enable Flash Attention 2 for all attention blocks"""
         try:
             from flash_attn import flash_attn_func
             print("✓ Flash Attention 2 detected - patching WAN attention")
             logging.info("Flash Attention 2 is available, patching WAN model")
+            
+            # First, let's trace what functions actually exist and are called
+            self._setup_comprehensive_tracing()
             
             # Import WAN attention module to patch
             try:
