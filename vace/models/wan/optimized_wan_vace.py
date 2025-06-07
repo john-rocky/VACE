@@ -95,7 +95,39 @@ class OptimizedWanVace(WanVace):
                     """Replace PyTorch SDPA with Flash Attention"""
                     if len(args) >= 3:
                         q, k, v = args[0], args[1], args[2]
-                        print(f"🚀 Replacing PyTorch SDPA with Flash Attention: q{q.shape}")
+                        
+                        # Check head dimension size
+                        head_dim = q.shape[-1]
+                        if head_dim > 256:
+                            # Head dimension too large for Flash Attention
+                            # Try xFormers memory efficient attention
+                            try:
+                                import xformers.ops as xops
+                                # xFormers expects [batch, seq, heads, dim] format
+                                if q.dim() == 4:  # [batch, heads, seq, dim]
+                                    q_xf = q.transpose(1, 2).contiguous()
+                                    k_xf = k.transpose(1, 2).contiguous()
+                                    v_xf = v.transpose(1, 2).contiguous()
+                                    
+                                    # Use xFormers memory efficient attention
+                                    out = xops.memory_efficient_attention(q_xf, k_xf, v_xf)
+                                    # Convert back to [batch, heads, seq, dim]
+                                    out = out.transpose(1, 2).contiguous()
+                                    return out
+                                else:
+                                    # Already in correct format
+                                    return xops.memory_efficient_attention(q, k, v)
+                                    
+                            except Exception:
+                                # Fallback to PyTorch SDPA with memory efficient settings
+                                with torch.backends.cuda.sdp_kernel(
+                                    enable_flash=False,
+                                    enable_math=False,
+                                    enable_mem_efficient=True
+                                ):
+                                    return original_sdpa(*args, **kwargs)
+                        
+                        print(f"🚀 Using Flash Attention: q{q.shape}, head_dim={head_dim}")
                         
                         try:
                             # Convert to Flash Attention format: [batch, seq, heads, dim]
@@ -143,8 +175,8 @@ class OptimizedWanVace(WanVace):
         """Enable Flash Attention 2 for all attention blocks"""
         try:
             from flash_attn import flash_attn_func
-            print("✓ Flash Attention 2 detected - patching WAN attention")
-            logging.info("Flash Attention 2 is available, patching WAN model")
+            print("✓ Flash Attention 2 detected")
+            logging.info("Flash Attention 2 is available, optimizing WAN model")
             
             # First, let's trace what functions actually exist and are called
             self._setup_comprehensive_tracing()
