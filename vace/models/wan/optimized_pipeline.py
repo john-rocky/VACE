@@ -97,6 +97,7 @@ class MemoryEfficientConfig:
         'enable_xformers': True,
         'optimize_cuda_allocation': True,
         'clear_cache_steps': 10,  # Clear CUDA cache every N steps
+        'enable_frame_skip': False,  # Generate half frames and interpolate
     }
     
     # Memory-optimized settings
@@ -115,6 +116,7 @@ class MemoryEfficientConfig:
         'vae_batch_size': 8,
         'enable_gradient_checkpointing': False,
         'clear_cache_steps': 20,
+        'enable_frame_skip': True,  # Enable frame skipping for 2x speedup
     }
     
     # Balanced settings

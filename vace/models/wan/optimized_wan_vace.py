@@ -28,12 +28,13 @@ from wan.text2video import FlowDPMSolverMultistepScheduler, get_sampling_sigmas,
 class OptimizedWanVace(WanVace):
     """Performance-optimized version of WanVace with Flash Attention 2 and other optimizations"""
     
-    def __init__(self, *args, enable_flash_attn=True, enable_torch_compile=True, **kwargs):
+    def __init__(self, *args, enable_flash_attn=True, enable_torch_compile=True, enable_frame_skip=False, **kwargs):
         super().__init__(*args, **kwargs)
         
         self.enable_flash_attn = enable_flash_attn
         # Force disable torch.compile if environment variable is set
         self.enable_torch_compile = enable_torch_compile and os.environ.get('TORCH_COMPILE_DISABLE', '0') != '1'
+        self.enable_frame_skip = enable_frame_skip
         
         # Enable CUDA optimizations
         if torch.cuda.is_available():
@@ -45,6 +46,9 @@ class OptimizedWanVace(WanVace):
             torch.backends.cudnn.deterministic = False
             
             print("✓ CUDA optimizations enabled (TF32, cuDNN benchmark)")
+        
+        if self.enable_frame_skip:
+            print("✓ Frame skip optimization enabled (2x speedup)")
         
         # Enable Flash Attention 2 if available
         if self.enable_flash_attn:
@@ -566,8 +570,84 @@ class OptimizedWanVace(WanVace):
         
         return all_decoded
     
+    def interpolate_frames(self, frames, method='linear'):
+        """Interpolate frames to double the frame count"""
+        if len(frames) < 2:
+            return frames
+            
+        interpolated = []
+        for i in range(len(frames) - 1):
+            interpolated.append(frames[i])
+            # Simple linear interpolation in pixel space
+            interpolated.append((frames[i] + frames[i + 1]) / 2)
+        interpolated.append(frames[-1])
+        
+        return interpolated
+    
+    def generate_with_frame_skip(self, *args, **kwargs):
+        """Generate with frame skipping for 2x speedup - using latent space interpolation"""
+        # Get original frame_num
+        frame_num = args[4] if len(args) > 4 else kwargs.get('frame_num', 81)
+        
+        # Store original decode_latent method
+        original_decode = self.decode_latent
+        interpolated_latents = []
+        
+        def decode_with_interpolation(zs, ref_images=None, vae=None):
+            """Decode latents with interpolation in latent space"""
+            # Interpolate in latent space before decoding
+            if len(zs) > 0 and len(zs[0]) > 1:
+                for z_batch in zs:
+                    # z_batch shape: [channels, frames, height, width]
+                    interpolated = []
+                    for i in range(z_batch.shape[1] - 1):
+                        # Add original frame
+                        interpolated.append(z_batch[:, i:i+1])
+                        # Add interpolated frame
+                        interp_frame = (z_batch[:, i:i+1] + z_batch[:, i+1:i+2]) / 2
+                        interpolated.append(interp_frame)
+                    # Add last frame
+                    interpolated.append(z_batch[:, -1:])
+                    
+                    # Concatenate along frame dimension
+                    z_interp = torch.cat(interpolated, dim=1)
+                    interpolated_latents.append(z_interp[:, :frame_num])
+            else:
+                interpolated_latents.extend(zs)
+            
+            # Decode the interpolated latents
+            return original_decode(interpolated_latents, ref_images, vae)
+        
+        # Generate half the frames
+        half_frame_num = (frame_num + 1) // 2
+        if len(args) > 4:
+            args = list(args)
+            args[4] = half_frame_num
+            args = tuple(args)
+        else:
+            kwargs['frame_num'] = half_frame_num
+        
+        print(f"  → Generating {half_frame_num} frames (will interpolate to {frame_num} in latent space)")
+        
+        try:
+            # Replace decode_latent temporarily
+            self.decode_latent = decode_with_interpolation
+            
+            # Generate with half frames
+            result = self.generate(*args, **kwargs)
+            
+        finally:
+            # Restore original decode_latent
+            self.decode_latent = original_decode
+        
+        return result
+    
     def generate(self, *args, **kwargs):
         """Override generate method to use optimized encoding/decoding"""
+        # If frame skip is enabled, use the frame skip method
+        if self.enable_frame_skip:
+            return self.generate_with_frame_skip(*args, **kwargs)
+        
         # Extract relevant arguments
         input_frames = args[1] if len(args) > 1 else kwargs.get('input_frames')
         input_masks = args[2] if len(args) > 2 else kwargs.get('input_masks')

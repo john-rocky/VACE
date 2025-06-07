@@ -309,7 +309,8 @@ def main(args):
             use_usp=(args.ulysses_size > 1 or args.ring_size > 1),
             t5_cpu=args.t5_cpu,
             enable_flash_attn=opt_config['enable_flash_attention'],
-            enable_torch_compile=torch_compile_enabled  # Use the actual status
+            enable_torch_compile=torch_compile_enabled,  # Use the actual status
+            enable_frame_skip=opt_config.get('enable_frame_skip', False)
         )
         
         # Update offload setting based on optimization mode
