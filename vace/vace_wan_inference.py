@@ -330,6 +330,8 @@ def main(args):
             optimizations.append("xFormers")
         if opt_config['enable_cpu_offload']:
             optimizations.append("CPU Offload")
+        if opt_config.get('enable_frame_skip', False):
+            optimizations.append("Frame Skip (2x)")
         print(f"  → {', '.join(optimizations) if optimizations else 'None'}")
         print("="*60)
         

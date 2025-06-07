@@ -8,8 +8,8 @@ export CUDA_LAUNCH_BLOCKING=0
 # LTX警告を抑制（WAN専用使用時）
 export VACE_SUPPRESS_IMPORT_WARNINGS=1
 
-# 速度優先モード（最速）
-echo "Running WAN inference with speed optimization..."
+# 速度優先モード（最速） - フレームスキップ有効
+echo "Running WAN inference with speed optimization (Frame Skip enabled)..."
 python -m vace.vace_wan_inference \
     --ckpt_dir models/Wan2.1-VACE-1.3B/ \
     --model_name vace-1.3B \

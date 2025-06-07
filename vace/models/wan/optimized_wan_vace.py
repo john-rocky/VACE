@@ -49,6 +49,7 @@ class OptimizedWanVace(WanVace):
         
         if self.enable_frame_skip:
             print("✓ Frame skip optimization enabled (2x speedup)")
+            print("  → Will generate half frames and interpolate in latent space")
         
         # Enable Flash Attention 2 if available
         if self.enable_flash_attn:
@@ -629,6 +630,9 @@ class OptimizedWanVace(WanVace):
         
         print(f"  → Generating {half_frame_num} frames (will interpolate to {frame_num} in latent space)")
         
+        import time
+        start_time = time.time()
+        
         try:
             # Replace decode_latent temporarily
             self.decode_latent = decode_with_interpolation
@@ -644,12 +648,16 @@ class OptimizedWanVace(WanVace):
             self.enable_frame_skip = True
             self.decode_latent = original_decode
         
+        end_time = time.time()
+        print(f"  → Frame skip generation completed in {end_time - start_time:.2f}s")
+        
         return result
     
     def generate(self, *args, **kwargs):
         """Override generate method to use optimized encoding/decoding"""
         # If frame skip is enabled, use the frame skip method
         if self.enable_frame_skip:
+            print(f"🚀 Frame skip activated - generating with interpolation")
             return self.generate_with_frame_skip(*args, **kwargs)
         
         # Extract relevant arguments
