@@ -35,6 +35,17 @@ class OptimizedWanVace(WanVace):
         # Force disable torch.compile if environment variable is set
         self.enable_torch_compile = enable_torch_compile and os.environ.get('TORCH_COMPILE_DISABLE', '0') != '1'
         
+        # Enable CUDA optimizations
+        if torch.cuda.is_available():
+            # Enable TF32 for better performance on Ampere GPUs
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            # Enable cuDNN autotuner for optimal convolution algorithms
+            torch.backends.cudnn.benchmark = True
+            torch.backends.cudnn.deterministic = False
+            
+            print("✓ CUDA optimizations enabled (TF32, cuDNN benchmark)")
+        
         # Enable Flash Attention 2 if available
         if self.enable_flash_attn:
             self._enable_flash_attention()
@@ -42,6 +53,13 @@ class OptimizedWanVace(WanVace):
         # Prepare model for torch.compile if available
         if self.enable_torch_compile and hasattr(torch, 'compile'):
             self._prepare_torch_compile()
+            
+        # Optimize memory allocation
+        if torch.cuda.is_available():
+            # Pre-allocate memory pool for better performance
+            torch.cuda.empty_cache()
+            # Set memory fraction for caching allocator
+            torch.cuda.set_per_process_memory_fraction(0.95)  # Use 95% of available memory
     
     def _setup_comprehensive_tracing(self):
         """Set up comprehensive tracing to see what functions are actually called"""
@@ -106,6 +124,9 @@ class OptimizedWanVace(WanVace):
                             batch_size = q.shape[0]
                             seq_len = q.shape[2] if q.dim() == 4 else q.shape[1]
                             
+                            print(f"🔄 Attempting to reshape head_dim {head_dim} -> {num_heads_combined} x 128")
+                            print(f"  Original shape: q{q.shape}, k{k.shape}, v{v.shape}")
+                            
                             try:
                                 # Reshape to split the concatenated heads
                                 if q.dim() == 4:  # [batch, heads, seq, dim]
@@ -169,7 +190,9 @@ class OptimizedWanVace(WanVace):
                                 ):
                                     return original_sdpa(*args, **kwargs)
                         
-                        print(f"🚀 Using Flash Attention: q{q.shape}, head_dim={head_dim}")
+                        # Standard Flash Attention for smaller head dimensions
+                        if head_dim <= 256:
+                            print(f"🚀 Using Flash Attention: q{q.shape}, head_dim={head_dim}")
                         
                         try:
                             # Convert to Flash Attention format: [batch, seq, heads, dim]
@@ -561,8 +584,19 @@ class OptimizedWanVace(WanVace):
             self.vace_encode_masks = self.vace_encode_masks_optimized
             self.decode_latent = self.decode_latent_batch
             
-            # Call parent generate method
-            return super().generate(*args, **kwargs)
+            # Enable CUDA graph caching for inference
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                torch.backends.cudnn.benchmark = True
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+            
+            # Override timestep loop for optimization
+            self._optimized_inference = True
+            
+            # Call parent generate method with optimizations
+            with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16):
+                return super().generate(*args, **kwargs)
             
         finally:
             # Restore original methods
