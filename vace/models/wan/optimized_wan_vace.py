@@ -62,13 +62,26 @@ class OptimizedWanVace(WanVace):
     
     def _prepare_torch_compile(self):
         """Prepare model for torch.compile optimization"""
+        # Check if torch.compile is disabled via environment variable
+        if os.environ.get('TORCH_COMPILE_DISABLE', '0') == '1':
+            logging.info("torch.compile disabled via environment variable")
+            return
+            
         if hasattr(torch, 'compile'):
             try:
+                # Only compile if we have enough memory
+                if torch.cuda.is_available():
+                    free_memory = torch.cuda.mem_get_info()[0] / 1024**3  # GB
+                    if free_memory < 8:  # Less than 8GB free
+                        logging.warning(f"Insufficient GPU memory ({free_memory:.1f}GB), skipping torch.compile")
+                        return
+                
                 # Compile the model with reduce-overhead mode for best performance
                 self.model = torch.compile(
                     self.model,
                     mode="reduce-overhead",
-                    fullgraph=False  # Allow for dynamic shapes
+                    fullgraph=False,  # Allow for dynamic shapes
+                    dynamic=True  # Better for varying input sizes
                 )
                 logging.info("Model compiled with torch.compile for optimized performance")
             except Exception as e:
