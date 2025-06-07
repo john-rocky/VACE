@@ -32,7 +32,8 @@ class OptimizedWanVace(WanVace):
         super().__init__(*args, **kwargs)
         
         self.enable_flash_attn = enable_flash_attn
-        self.enable_torch_compile = enable_torch_compile
+        # Force disable torch.compile if environment variable is set
+        self.enable_torch_compile = enable_torch_compile and os.environ.get('TORCH_COMPILE_DISABLE', '0') != '1'
         
         # Enable Flash Attention 2 if available
         if self.enable_flash_attn:
