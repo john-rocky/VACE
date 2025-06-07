@@ -85,24 +85,56 @@ class OptimizedWanVace(WanVace):
                 except Exception as e:
                     print(f"  → Could not trace {func_name}: {e}")
             
-            # Also trace PyTorch functions
+            # Replace PyTorch attention with Flash Attention
             try:
                 import torch.nn.functional as F
+                from flash_attn import flash_attn_func
                 original_sdpa = F.scaled_dot_product_attention
                 
-                def traced_sdpa(*args, **kwargs):
-                    print("🔍 PyTorch scaled_dot_product_attention called!")
-                    if args:
-                        print(f"  → q,k,v shapes: {[arg.shape for arg in args[:3]]}")
-                    result = original_sdpa(*args, **kwargs)
-                    print(f"  → output shape: {result.shape}")
-                    return result
+                def flash_attention_replacement(*args, **kwargs):
+                    """Replace PyTorch SDPA with Flash Attention"""
+                    if len(args) >= 3:
+                        q, k, v = args[0], args[1], args[2]
+                        print(f"🚀 Replacing PyTorch SDPA with Flash Attention: q{q.shape}")
+                        
+                        try:
+                            # Convert to Flash Attention format: [batch, seq, heads, dim]
+                            if q.dim() == 4:  # [batch, heads, seq, dim] -> [batch, seq, heads, dim]
+                                q_fa = q.transpose(1, 2)
+                                k_fa = k.transpose(1, 2) 
+                                v_fa = v.transpose(1, 2)
+                            else:
+                                q_fa, k_fa, v_fa = q, k, v
+                            
+                            # Ensure half precision for Flash Attention
+                            if q_fa.dtype not in [torch.half, torch.bfloat16]:
+                                q_fa = q_fa.half()
+                                k_fa = k_fa.half()
+                                v_fa = v_fa.half()
+                            
+                            # Use Flash Attention
+                            out = flash_attn_func(q_fa, k_fa, v_fa, 
+                                                dropout_p=kwargs.get('dropout_p', 0.0),
+                                                causal=kwargs.get('is_causal', False))
+                            
+                            # Convert back to original format
+                            if q.dim() == 4:  # Convert back to [batch, heads, seq, dim]
+                                out = out.transpose(1, 2)
+                            
+                            print(f"  → Flash Attention success: {out.shape}")
+                            return out
+                            
+                        except Exception as e:
+                            print(f"  → Flash Attention failed ({e}), falling back to PyTorch SDPA")
+                            return original_sdpa(*args, **kwargs)
+                    else:
+                        return original_sdpa(*args, **kwargs)
                 
-                F.scaled_dot_product_attention = traced_sdpa
-                print("  → Also tracing PyTorch scaled_dot_product_attention")
+                F.scaled_dot_product_attention = flash_attention_replacement
+                print("  → ✅ Replaced PyTorch SDPA with Flash Attention!")
                 
             except Exception as e:
-                print(f"  → Could not trace PyTorch attention: {e}")
+                print(f"  → Could not replace PyTorch attention: {e}")
                 
         except Exception as e:
             print(f"  → Tracing setup failed: {e}")
