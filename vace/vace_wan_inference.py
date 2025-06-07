@@ -11,6 +11,10 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
+# Suppress LTX import warnings when using WAN only
+if not os.environ.get('VACE_SUPPRESS_IMPORT_WARNINGS'):
+    os.environ['VACE_SUPPRESS_IMPORT_WARNINGS'] = '1'
+
 import torch, random
 import torch.distributed as dist
 from PIL import Image

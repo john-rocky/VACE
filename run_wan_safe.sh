@@ -6,6 +6,9 @@ echo "Setting up safe execution environment..."
 # torch.compileを無効化
 export TORCH_COMPILE_DISABLE=1
 
+# LTX警告を抑制（WAN専用使用時）
+export VACE_SUPPRESS_IMPORT_WARNINGS=1
+
 # メモリ最適化設定
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True,max_split_size_mb:256"
 

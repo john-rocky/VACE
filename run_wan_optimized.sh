@@ -5,6 +5,9 @@
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 export CUDA_LAUNCH_BLOCKING=0
 
+# LTX警告を抑制（WAN専用使用時）
+export VACE_SUPPRESS_IMPORT_WARNINGS=1
+
 # 速度優先モード（最速）
 echo "Running WAN inference with speed optimization..."
 python -m vace.vace_wan_inference \

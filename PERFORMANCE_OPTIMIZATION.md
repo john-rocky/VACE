@@ -133,6 +133,12 @@ export CUDA_LAUNCH_BLOCKING=0
 
 # Enable TF32 for Ampere GPUs
 export TORCH_ALLOW_TF32=1
+
+# Suppress LTX import warnings when using WAN only
+export VACE_SUPPRESS_IMPORT_WARNINGS=1
+
+# Disable torch.compile if causing issues
+export TORCH_COMPILE_DISABLE=1
 ```
 
 ## 🎨 Optimization Modes Explained
