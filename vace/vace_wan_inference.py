@@ -18,7 +18,7 @@ from PIL import Image
 import wan
 from wan.utils.utils import cache_video, cache_image, str2bool
 
-from models.wan import WanVace
+from models.wan import WanVace, OptimizedWanVace, MemoryEfficientConfig
 from models.wan.configs import WAN_CONFIGS, SIZE_CONFIGS, MAX_AREA_CONFIGS, SUPPORTED_SIZES
 from annotators.utils import get_annotator
 
@@ -44,7 +44,8 @@ def validate_args(args):
 
     # The default sampling steps are 40 for image-to-video tasks and 50 for text-to-video tasks.
     if args.sample_steps is None:
-        args.sample_steps = 50
+        # Use fewer steps when optimization is enabled
+        args.sample_steps = 25 if getattr(args, 'use_optimized', False) else 50
 
     if args.sample_shift is None:
         args.sample_shift = 16
@@ -178,6 +179,17 @@ def get_parser():
         type=float,
         default=5.0,
         help="Classifier free guidance scale.")
+    # Add optimization arguments
+    parser.add_argument(
+        "--use_optimized",
+        action="store_true",
+        help="Use optimized model implementation for faster generation")
+    parser.add_argument(
+        "--optimization_mode",
+        type=str,
+        default="balanced",
+        choices=["speed", "memory", "balanced"],
+        help="Optimization mode: speed (fastest), memory (lowest VRAM), balanced (recommended)")
     return parser
 
 
@@ -271,16 +283,39 @@ def main(args):
         logging.info(f"Extended prompt: {args.prompt}")
 
     logging.info("Creating WanT2V pipeline.")
-    wan_vace = WanVace(
-        config=cfg,
-        checkpoint_dir=args.ckpt_dir,
-        device_id=device,
-        rank=rank,
-        t5_fsdp=args.t5_fsdp,
-        dit_fsdp=args.dit_fsdp,
-        use_usp=(args.ulysses_size > 1 or args.ring_size > 1),
-        t5_cpu=args.t5_cpu,
-    )
+    
+    # Create optimized or standard model based on args
+    if args.use_optimized and OptimizedWanVace is not None:
+        opt_config = MemoryEfficientConfig.get_config(args.optimization_mode)
+        logging.info(f"Using optimized WAN model with {args.optimization_mode} mode")
+        
+        wan_vace = OptimizedWanVace(
+            config=cfg,
+            checkpoint_dir=args.ckpt_dir,
+            device_id=device,
+            rank=rank,
+            t5_fsdp=args.t5_fsdp,
+            dit_fsdp=args.dit_fsdp,
+            use_usp=(args.ulysses_size > 1 or args.ring_size > 1),
+            t5_cpu=args.t5_cpu,
+            enable_flash_attn=opt_config['enable_flash_attention'],
+            enable_torch_compile=opt_config['enable_torch_compile']
+        )
+        
+        # Update offload setting based on optimization mode
+        if args.offload_model is None:
+            args.offload_model = opt_config.get('enable_cpu_offload', False)
+    else:
+        wan_vace = WanVace(
+            config=cfg,
+            checkpoint_dir=args.ckpt_dir,
+            device_id=device,
+            rank=rank,
+            t5_fsdp=args.t5_fsdp,
+            dit_fsdp=args.dit_fsdp,
+            use_usp=(args.ulysses_size > 1 or args.ring_size > 1),
+            t5_cpu=args.t5_cpu,
+        )
 
     src_video, src_mask, src_ref_images = wan_vace.prepare_source([args.src_video],
                                                                   [args.src_mask],
