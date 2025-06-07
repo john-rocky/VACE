@@ -633,11 +633,15 @@ class OptimizedWanVace(WanVace):
             # Replace decode_latent temporarily
             self.decode_latent = decode_with_interpolation
             
+            # Temporarily disable frame skip to avoid recursion
+            self.enable_frame_skip = False
+            
             # Generate with half frames
             result = self.generate(*args, **kwargs)
             
         finally:
-            # Restore original decode_latent
+            # Restore original settings
+            self.enable_frame_skip = True
             self.decode_latent = original_decode
         
         return result
