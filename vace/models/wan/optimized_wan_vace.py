@@ -47,25 +47,71 @@ class OptimizedWanVace(WanVace):
         """Enable Flash Attention 2 for all attention blocks"""
         try:
             from flash_attn import flash_attn_func
-            print("✓ Flash Attention 2 detected and enabled")
-            logging.info("Flash Attention 2 is available, enabling for WAN model")
+            print("✓ Flash Attention 2 detected - patching WAN attention")
+            logging.info("Flash Attention 2 is available, patching WAN model")
             
-            # Count attention blocks
-            main_blocks = 0
-            vace_blocks = 0
-            
-            # Patch attention computation in all blocks
-            for block in self.model.blocks:
-                if hasattr(block, 'self_attn'):
-                    block.self_attn._use_flash_attention_2 = True
-                    main_blocks += 1
-                    
-            for block in self.model.vace_blocks:
-                if hasattr(block, 'self_attn'):
-                    block.self_attn._use_flash_attention_2 = True
-                    vace_blocks += 1
-            
-            print(f"  → Applied to {main_blocks} main blocks + {vace_blocks} VACE blocks")
+            # Import WAN attention module to patch
+            try:
+                import wan.modules.attention as wan_attn
+                
+                # Store original attention function
+                if not hasattr(wan_attn, '_original_flash_attention'):
+                    wan_attn._original_flash_attention = getattr(wan_attn, 'flash_attention', None)
+                
+                # Create optimized flash attention function
+                def optimized_flash_attention(q, k, v, k_lens, causal=False, dropout_p=0.0):
+                    """Optimized flash attention using flash_attn_func"""
+                    try:
+                        # Convert to flash_attn format if needed
+                        if q.dim() == 4:  # [batch, heads, seq, dim]
+                            q = q.transpose(1, 2)  # [batch, seq, heads, dim]
+                            k = k.transpose(1, 2)
+                            v = v.transpose(1, 2)
+                        
+                        # Use flash attention
+                        out = flash_attn_func(q, k, v, dropout_p=dropout_p, causal=causal)
+                        
+                        # Convert back if needed
+                        if out.dim() == 4:
+                            out = out.transpose(1, 2)  # Back to [batch, heads, seq, dim]
+                        
+                        return out
+                    except Exception as e:
+                        # Fallback to original implementation
+                        if wan_attn._original_flash_attention:
+                            return wan_attn._original_flash_attention(q, k, v, k_lens, causal, dropout_p)
+                        else:
+                            # Fallback to standard attention
+                            return torch.nn.functional.scaled_dot_product_attention(q, k, v)
+                
+                # Patch the function
+                wan_attn.flash_attention = optimized_flash_attention
+                print("  → Successfully patched wan.modules.attention.flash_attention")
+                
+                # Count blocks for display
+                main_blocks = len(self.model.blocks) if hasattr(self.model, 'blocks') else 0
+                vace_blocks = len(self.model.vace_blocks) if hasattr(self.model, 'vace_blocks') else 0
+                print(f"  → Will apply to {main_blocks} main blocks + {vace_blocks} VACE blocks")
+                
+            except ImportError as e:
+                print(f"  → Cannot patch WAN attention module: {e}")
+                print("  → Falling back to attribute setting method")
+                
+                # Fallback to the original method
+                main_blocks = 0
+                vace_blocks = 0
+                
+                for block in self.model.blocks:
+                    if hasattr(block, 'self_attn'):
+                        block.self_attn._use_flash_attention_2 = True
+                        main_blocks += 1
+                        
+                for block in self.model.vace_blocks:
+                    if hasattr(block, 'self_attn'):
+                        block.self_attn._use_flash_attention_2 = True
+                        vace_blocks += 1
+                
+                print(f"  → Applied flags to {main_blocks} main blocks + {vace_blocks} VACE blocks")
                     
         except ImportError:
             print("✗ Flash Attention 2 not available")
