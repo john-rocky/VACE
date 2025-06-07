@@ -61,32 +61,120 @@ class OptimizedWanVace(WanVace):
                 # Create optimized flash attention function
                 def optimized_flash_attention(q, k, v, k_lens, causal=False, dropout_p=0.0):
                     """Optimized flash attention using flash_attn_func"""
+                    print(f"🚀 Flash Attention called: q{q.shape}, k{k.shape}, v{v.shape}")
+                    
                     try:
-                        # Convert to flash_attn format if needed
-                        if q.dim() == 4:  # [batch, heads, seq, dim]
-                            q = q.transpose(1, 2)  # [batch, seq, heads, dim]
-                            k = k.transpose(1, 2)
-                            v = v.transpose(1, 2)
+                        # Handle k_lens properly - concatenate tensors if needed
+                        if isinstance(k_lens, (list, tuple)):
+                            k_cat = torch.cat([k_i[:length] for k_i, length in zip(k, k_lens)])
+                            v_cat = torch.cat([v_i[:length] for v_i, length in zip(v, k_lens)])
+                            q_cat = q  # Usually q doesn't need truncation
+                        else:
+                            k_cat = k
+                            v_cat = v  
+                            q_cat = q
+                        
+                        # Convert to flash_attn format: [batch, seq, heads, dim]
+                        if q_cat.dim() == 4:  # [batch, heads, seq, dim]
+                            q_fa = q_cat.transpose(1, 2)  # [batch, seq, heads, dim]
+                            k_fa = k_cat.transpose(1, 2)
+                            v_fa = v_cat.transpose(1, 2)
+                        else:
+                            q_fa, k_fa, v_fa = q_cat, k_cat, v_cat
+                        
+                        # Ensure correct dtype
+                        if q_fa.dtype != torch.half and q_fa.dtype != torch.bfloat16:
+                            q_fa = q_fa.half()
+                            k_fa = k_fa.half() 
+                            v_fa = v_fa.half()
+                        
+                        print(f"  → Using Flash Attention with shapes: q{q_fa.shape}, k{k_fa.shape}, v{v_fa.shape}")
                         
                         # Use flash attention
-                        out = flash_attn_func(q, k, v, dropout_p=dropout_p, causal=causal)
+                        out = flash_attn_func(q_fa, k_fa, v_fa, dropout_p=dropout_p, causal=causal)
                         
-                        # Convert back if needed
-                        if out.dim() == 4:
+                        # Convert back to original format if needed
+                        if q.dim() == 4:  # Need to transpose back
                             out = out.transpose(1, 2)  # Back to [batch, heads, seq, dim]
                         
+                        print(f"  → Flash Attention output: {out.shape}")
                         return out
+                        
                     except Exception as e:
+                        print(f"  → Flash Attention failed: {e}, falling back to original")
                         # Fallback to original implementation
                         if wan_attn._original_flash_attention:
                             return wan_attn._original_flash_attention(q, k, v, k_lens, causal, dropout_p)
                         else:
                             # Fallback to standard attention
-                            return torch.nn.functional.scaled_dot_product_attention(q, k, v)
+                            if q.dim() == 4:  # [batch, heads, seq, dim]
+                                return torch.nn.functional.scaled_dot_product_attention(q, k, v)
+                            else:
+                                # Reshape for standard attention
+                                q_std = q.transpose(1, 2) if q.dim() == 4 else q
+                                k_std = k.transpose(1, 2) if k.dim() == 4 else k
+                                v_std = v.transpose(1, 2) if v.dim() == 4 else v
+                                out_std = torch.nn.functional.scaled_dot_product_attention(q_std, k_std, v_std)
+                                return out_std.transpose(1, 2) if q.dim() == 4 else out_std
                 
                 # Patch the function
                 wan_attn.flash_attention = optimized_flash_attention
                 print("  → Successfully patched wan.modules.attention.flash_attention")
+                
+                # Also try to patch other attention functions if they exist
+                attention_functions = [attr for attr in dir(wan_attn) if 'attention' in attr.lower() and callable(getattr(wan_attn, attr))]
+                for func_name in attention_functions:
+                    if func_name not in ['flash_attention', '_original_flash_attention']:
+                        try:
+                            original_func = getattr(wan_attn, func_name)
+                            # Save original if not already saved
+                            backup_name = f'_original_{func_name}'
+                            if not hasattr(wan_attn, backup_name):
+                                setattr(wan_attn, backup_name, original_func)
+                            
+                            # Create wrapper that tries flash attention first
+                            def make_flash_wrapper(orig_func, fname):
+                                def flash_wrapper(*args, **kwargs):
+                                    try:
+                                        # If this looks like an attention call, try our optimized version
+                                        if len(args) >= 3:
+                                            return optimized_flash_attention(*args, **kwargs)
+                                    except:
+                                        pass
+                                    # Fall back to original
+                                    return orig_func(*args, **kwargs)
+                                return flash_wrapper
+                            
+                            setattr(wan_attn, func_name, make_flash_wrapper(original_func, func_name))
+                            print(f"  → Also patched {func_name}")
+                            
+                        except Exception as e:
+                            print(f"  → Could not patch {func_name}: {e}")
+                
+                # Patch attention at the block level too
+                try:
+                    from wan.modules.attention import WanAttentionBlock
+                    
+                    # Store original forward method
+                    if not hasattr(WanAttentionBlock, '_original_forward'):
+                        WanAttentionBlock._original_forward = WanAttentionBlock.forward
+                    
+                    def optimized_attention_forward(self, x, **kwargs):
+                        """Optimized attention block forward with Flash Attention"""
+                        # Add debug print to see if this is being called
+                        if hasattr(self, '_flash_debug_count'):
+                            self._flash_debug_count += 1
+                        else:
+                            self._flash_debug_count = 1
+                            print(f"🔧 Optimized attention block forward called (block #{id(self) % 1000})")
+                        
+                        return self._original_forward(x, **kwargs)
+                    
+                    WanAttentionBlock.forward = optimized_attention_forward
+                    print("  → Patched WanAttentionBlock.forward")
+                    
+                except Exception as e:
+                    print(f"  → Could not patch WanAttentionBlock: {e}")
                 
                 # Count blocks for display
                 main_blocks = len(self.model.blocks) if hasattr(self.model, 'blocks') else 0
