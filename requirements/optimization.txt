@@ -1,0 +1,21 @@
+# Performance optimization dependencies for WAN model
+# These libraries provide significant speedup for video generation
+
+# Flash Attention 2 - Memory-efficient attention (30-50% speedup)
+# Install with: pip install flash-attn --no-build-isolation
+flash-attn>=2.5.0
+
+# xFormers - Memory-efficient transformers (additional 10-15% speedup)
+# For CUDA 11.8: pip install xformers==0.0.23 --index-url https://download.pytorch.org/whl/cu118
+# For CUDA 12.1: pip install xformers==0.0.23 --index-url https://download.pytorch.org/whl/cu121
+xformers>=0.0.23
+
+# Triton (used by Flash Attention)
+triton>=2.1.0
+
+# Optional: Additional performance libraries
+# ninja - Faster C++ compilation
+ninja
+
+# psutil - Memory monitoring
+psutil

@@ -15,12 +15,34 @@ This branch contains performance optimizations for the WAN video generation mode
 
 ## 📦 Installation
 
+### Quick Installation
 ```bash
-# Install Flash Attention 2 (optional but recommended)
+# Install all optimization dependencies
+pip install -r requirements.txt
+
+# Or install optimization libraries only
+pip install -r requirements/optimization.txt
+```
+
+### Manual Installation
+```bash
+# Install Flash Attention 2 (compile from source for best compatibility)
 pip install flash-attn --no-build-isolation
 
-# Install xFormers for memory-efficient attention
+# Install xFormers (choose based on your CUDA version)
+# For CUDA 11.8:
 pip install xformers==0.0.23 --index-url https://download.pytorch.org/whl/cu118
+# For CUDA 12.1:
+pip install xformers==0.0.23 --index-url https://download.pytorch.org/whl/cu121
+
+# Additional performance libraries
+pip install triton>=2.1.0 ninja psutil
+```
+
+### Automated Installation Script
+```bash
+# Run the installation script (detects CUDA version automatically)
+./install_optimizations.sh
 ```
 
 ## 🎯 Usage

@@ -13,7 +13,10 @@ easydict
 ftfy
 dashscope
 imageio-ffmpeg
-flash_attn
+# Performance optimization libraries
+flash_attn>=2.5.0
+xformers>=0.0.23
+# Core libraries
 decord
 einops
 scikit-image
