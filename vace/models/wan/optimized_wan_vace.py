@@ -98,6 +98,48 @@ class OptimizedWanVace(WanVace):
                         
                         # Check head dimension size
                         head_dim = q.shape[-1]
+                        
+                        # Try to reshape for Flash Attention if head_dim is too large
+                        if head_dim > 256 and head_dim % 128 == 0:
+                            # Likely multiple heads concatenated (e.g., 384 = 3 x 128)
+                            num_heads_combined = head_dim // 128
+                            batch_size = q.shape[0]
+                            seq_len = q.shape[2] if q.dim() == 4 else q.shape[1]
+                            
+                            try:
+                                # Reshape to split the concatenated heads
+                                if q.dim() == 4:  # [batch, heads, seq, dim]
+                                    orig_heads = q.shape[1]
+                                    # Reshape to [batch, heads * num_heads_combined, seq, 128]
+                                    q_split = q.view(batch_size, orig_heads * num_heads_combined, seq_len, 128)
+                                    k_split = k.view(batch_size, orig_heads * num_heads_combined, seq_len, 128)
+                                    v_split = v.view(batch_size, orig_heads * num_heads_combined, seq_len, 128)
+                                    
+                                    # Now use Flash Attention with proper head dimension
+                                    q_fa = q_split.transpose(1, 2)  # [batch, seq, heads, 128]
+                                    k_fa = k_split.transpose(1, 2)
+                                    v_fa = v_split.transpose(1, 2)
+                                    
+                                    # Ensure half precision
+                                    if q_fa.dtype not in [torch.half, torch.bfloat16]:
+                                        q_fa = q_fa.half()
+                                        k_fa = k_fa.half()
+                                        v_fa = v_fa.half()
+                                    
+                                    # Use Flash Attention
+                                    out = flash_attn_func(q_fa, k_fa, v_fa, 
+                                                        dropout_p=kwargs.get('dropout_p', 0.0),
+                                                        causal=kwargs.get('is_causal', False))
+                                    
+                                    # Reshape back
+                                    out = out.transpose(1, 2)  # [batch, heads, seq, 128]
+                                    out = out.view(batch_size, orig_heads, seq_len, head_dim)
+                                    
+                                    return out
+                                    
+                            except Exception as e:
+                                pass  # Fall through to other methods
+                        
                         if head_dim > 256:
                             # Head dimension too large for Flash Attention
                             # Try xFormers memory efficient attention
