@@ -286,6 +286,9 @@ def main(args):
     # Create optimized or standard model based on args
     if args.use_optimized and OptimizedWanVace is not None:
         opt_config = MemoryEfficientConfig.get_config(args.optimization_mode)
+        print("="*60)
+        print(f"🚀 OPTIMIZED WAN MODEL ({args.optimization_mode.upper()} MODE)")
+        print("="*60)
         logging.info(f"Using optimized WAN model with {args.optimization_mode} mode")
         
         wan_vace = OptimizedWanVace(
@@ -304,7 +307,23 @@ def main(args):
         # Update offload setting based on optimization mode
         if args.offload_model is None:
             args.offload_model = opt_config.get('enable_cpu_offload', False)
+        
+        # Print optimization configuration
+        print("Active optimizations:")
+        optimizations = []
+        if opt_config['enable_flash_attention']:
+            optimizations.append("Flash Attention 2")
+        if opt_config['enable_torch_compile']:
+            optimizations.append("torch.compile")
+        if opt_config['enable_xformers']:
+            optimizations.append("xFormers")
+        if opt_config['enable_cpu_offload']:
+            optimizations.append("CPU Offload")
+        print(f"  → {', '.join(optimizations) if optimizations else 'None'}")
+        print("="*60)
+        
     else:
+        print("📝 Standard WAN model (no optimizations)")
         wan_vace = WanVace(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,

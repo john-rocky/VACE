@@ -47,24 +47,35 @@ class OptimizedWanVace(WanVace):
         """Enable Flash Attention 2 for all attention blocks"""
         try:
             from flash_attn import flash_attn_func
+            print("✓ Flash Attention 2 detected and enabled")
             logging.info("Flash Attention 2 is available, enabling for WAN model")
+            
+            # Count attention blocks
+            main_blocks = 0
+            vace_blocks = 0
             
             # Patch attention computation in all blocks
             for block in self.model.blocks:
                 if hasattr(block, 'self_attn'):
                     block.self_attn._use_flash_attention_2 = True
+                    main_blocks += 1
                     
             for block in self.model.vace_blocks:
                 if hasattr(block, 'self_attn'):
                     block.self_attn._use_flash_attention_2 = True
+                    vace_blocks += 1
+            
+            print(f"  → Applied to {main_blocks} main blocks + {vace_blocks} VACE blocks")
                     
         except ImportError:
+            print("✗ Flash Attention 2 not available")
             logging.warning("Flash Attention 2 not available. Install with: pip install flash-attn --no-build-isolation")
     
     def _prepare_torch_compile(self):
         """Prepare model for torch.compile optimization"""
         # Check if torch.compile is disabled via environment variable
         if os.environ.get('TORCH_COMPILE_DISABLE', '0') == '1':
+            print("○ torch.compile disabled via environment variable")
             logging.info("torch.compile disabled via environment variable")
             return
             
@@ -74,9 +85,11 @@ class OptimizedWanVace(WanVace):
                 if torch.cuda.is_available():
                     free_memory = torch.cuda.mem_get_info()[0] / 1024**3  # GB
                     if free_memory < 8:  # Less than 8GB free
+                        print(f"○ torch.compile skipped (low memory: {free_memory:.1f}GB)")
                         logging.warning(f"Insufficient GPU memory ({free_memory:.1f}GB), skipping torch.compile")
                         return
                 
+                print("✓ torch.compile enabled (reduce-overhead mode)")
                 # Compile the model with reduce-overhead mode for best performance
                 self.model = torch.compile(
                     self.model,
@@ -86,7 +99,10 @@ class OptimizedWanVace(WanVace):
                 )
                 logging.info("Model compiled with torch.compile for optimized performance")
             except Exception as e:
+                print(f"✗ torch.compile failed: {e}")
                 logging.warning(f"Failed to compile model: {e}")
+        else:
+            print("○ torch.compile not available (PyTorch < 2.0)")
     
     def vace_encode_frames_batch(self, frames, ref_images, masks=None, vae=None, batch_size=4):
         """Optimized batch encoding for VAE with configurable batch size"""
@@ -97,6 +113,10 @@ class OptimizedWanVace(WanVace):
             assert len(frames) == len(ref_images)
         
         all_latents = []
+        total_batches = (len(frames) + batch_size - 1) // batch_size
+        
+        if total_batches > 1:
+            print(f"✓ VAE batch encoding enabled (batch_size={batch_size}, {total_batches} batches)")
         
         # Process in batches for better GPU utilization
         for batch_start in range(0, len(frames), batch_size):
@@ -151,6 +171,9 @@ class OptimizedWanVace(WanVace):
         
         result_masks = []
         
+        if len(masks) > 0:
+            print(f"✓ Vectorized mask processing enabled ({len(masks)} masks)")
+        
         # Process all masks in parallel where possible
         for mask, refs in zip(masks, ref_images):
             c, depth, height, width = mask.shape
@@ -197,6 +220,10 @@ class OptimizedWanVace(WanVace):
             if refs is not None:
                 z = z[:, len(refs):, :, :]
             trimmed_zs.append(z)
+        
+        total_batches = (len(trimmed_zs) + batch_size - 1) // batch_size
+        if total_batches > 1:
+            print(f"✓ VAE batch decoding enabled (batch_size={batch_size}, {total_batches} batches)")
         
         # Batch decode for better GPU utilization
         all_decoded = []
