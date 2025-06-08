@@ -642,6 +642,8 @@ class OptimizedWanVace(WanVace):
             kwargs['frame_num'] = half_frame_num
         
         print(f"  → Generating {half_frame_num} frames (will interpolate to {frame_num} in latent space)")
+        print(f"  ⚠️  Note: WAN uses fixed sequence length based on resolution, not frame count")
+        print(f"  ⚠️  For true speedup, consider reducing resolution or sampling steps")
         
         # Get sampling steps for logging
         sampling_steps = args[10] if len(args) > 10 else kwargs.get('sampling_steps', 50)

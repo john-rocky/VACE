@@ -119,6 +119,19 @@ class MemoryEfficientConfig:
         'enable_frame_skip': True,  # Enable frame skipping for 2x speedup
     }
     
+    # Ultra-speed settings (sacrifices some quality for major speedup)
+    ULTRA_SPEED = {
+        **DEFAULT_SETTINGS,
+        'enable_cpu_offload': False,
+        'vae_batch_size': 8,
+        'enable_gradient_checkpointing': False,
+        'clear_cache_steps': 20,
+        'enable_frame_skip': False,  # Frame skip doesn't help WAN due to fixed seq length
+        'reduce_steps': True,  # Reduce sampling steps
+        'recommended_steps': 25,  # Half the default steps
+        'recommended_resolution': '360p',  # Lower resolution for faster processing
+    }
+    
     # Balanced settings
     BALANCED = {
         **DEFAULT_SETTINGS,
@@ -134,7 +147,17 @@ class MemoryEfficientConfig:
         configs = {
             'memory': cls.MEMORY_OPTIMIZED,
             'speed': cls.SPEED_OPTIMIZED,
+            'ultra_speed': cls.ULTRA_SPEED,
             'balanced': cls.BALANCED,
             'default': cls.DEFAULT_SETTINGS,
         }
-        return configs.get(mode, cls.DEFAULT_SETTINGS).copy()
+        config = configs.get(mode, cls.DEFAULT_SETTINGS).copy()
+        
+        # Print recommendations for ultra_speed mode
+        if mode == 'ultra_speed':
+            print("⚡ Ultra-speed mode recommendations:")
+            print(f"  → Use --sample_steps {config['recommended_steps']} (2x faster)")
+            print(f"  → Use --size {config['recommended_resolution']} (4x faster)")
+            print("  → Combined: ~8x faster generation")
+        
+        return config
