@@ -191,8 +191,19 @@ def get_parser():
         "--optimization_mode",
         type=str,
         default="balanced",
-        choices=["speed", "memory", "balanced"],
+        choices=["speed", "memory", "balanced", "ultra_speed"],
         help="Optimization mode: speed (fastest), memory (lowest VRAM), balanced (recommended)")
+    parser.add_argument(
+        "--safety_filter",
+        type=str,
+        default="off",
+        choices=["off", "low", "medium", "high"],
+        help="Safety filter level to prevent harmful content generation")
+    parser.add_argument(
+        "--block_unsafe",
+        type=str2bool,
+        default=True,
+        help="Block generation of unsafe content (True) or auto-sanitize (False)")
     return parser
 
 
@@ -284,6 +295,22 @@ def main(args):
             dist.broadcast_object_list(input_prompt, src=0)
         args.prompt = input_prompt[0]
         logging.info(f"Extended prompt: {args.prompt}")
+    
+    # Apply safety filter if enabled
+    if args.safety_filter != 'off':
+        from models.wan.safety_filter import apply_safety_filter
+        try:
+            filtered_prompt = apply_safety_filter(
+                args.prompt, 
+                safety_level=args.safety_filter,
+                block_unsafe=args.block_unsafe
+            )
+            if filtered_prompt != args.prompt:
+                logging.info(f"Prompt modified by safety filter: {filtered_prompt}")
+                args.prompt = filtered_prompt
+        except ValueError as e:
+            logging.error(str(e))
+            return {'error': str(e)}
 
     logging.info("Creating WanT2V pipeline.")
     
