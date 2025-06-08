@@ -17,4 +17,4 @@ vace.egg-info
 .readthedocs.yml
 *resources
 *.ipynb_checkpoints*
-*.vscode
+*.vscodeWan2.1/
