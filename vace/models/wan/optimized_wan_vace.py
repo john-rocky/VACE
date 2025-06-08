@@ -589,6 +589,69 @@ class OptimizedWanVace(WanVace):
         
         return interpolated
     
+    def adjust_prompt_for_compressed_time(self, prompt, compression_ratio=2.0):
+        """Adjust prompt to maintain scene content with fewer frames"""
+        # Add speed modifiers based on compression ratio
+        speed_modifiers = {
+            1.5: ["briskly", "swiftly"],
+            2.0: ["quickly", "rapidly"],
+            2.5: ["very quickly", "at high speed"],
+            3.0: ["extremely fast", "in fast motion"]
+        }
+        
+        # Find the closest compression ratio
+        closest_ratio = min(speed_modifiers.keys(), key=lambda x: abs(x - compression_ratio))
+        modifier = speed_modifiers[closest_ratio][0]
+        
+        # Common motion words to enhance
+        motion_words = {
+            "moves": f"{modifier} moves",
+            "walks": f"{modifier} walks",
+            "runs": "sprints",
+            "drives": f"{modifier} drives",
+            "flies": f"{modifier} flies",
+            "approaches": f"{modifier} approaches",
+            "travels": f"{modifier} travels"
+        }
+        
+        adjusted_prompt = prompt
+        for word, replacement in motion_words.items():
+            if word in prompt.lower():
+                adjusted_prompt = adjusted_prompt.replace(word, replacement)
+                break
+        else:
+            # If no motion words found, prepend modifier
+            adjusted_prompt = f"{modifier}, {prompt}"
+        
+        return adjusted_prompt
+    
+    def generate_compressed_scene(self, *args, **kwargs):
+        """Generate the same scene with fewer frames by adjusting motion speed"""
+        # Extract parameters
+        prompt = args[0] if len(args) > 0 else kwargs.get('prompt', '')
+        original_frame_num = 81  # Standard frame count
+        target_frame_num = args[4] if len(args) > 4 else kwargs.get('frame_num', 41)
+        
+        # Calculate compression ratio
+        compression_ratio = original_frame_num / target_frame_num
+        
+        # Adjust the prompt for faster motion
+        if kwargs.get('auto_adjust_prompt', True):
+            adjusted_prompt = self.adjust_prompt_for_compressed_time(prompt, compression_ratio)
+            print(f"  → Original prompt: {prompt}")
+            print(f"  → Adjusted prompt: {adjusted_prompt}")
+            
+            # Update the prompt
+            if len(args) > 0:
+                args = list(args)
+                args[0] = adjusted_prompt
+                args = tuple(args)
+            else:
+                kwargs['prompt'] = adjusted_prompt
+        
+        # Generate with adjusted parameters
+        return self.generate(*args, **kwargs)
+    
     def generate_with_frame_skip(self, *args, **kwargs):
         """Generate with frame skipping for 2x speedup - using latent space interpolation"""
         # Get original frame_num

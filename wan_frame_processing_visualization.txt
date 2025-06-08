@@ -1,0 +1,64 @@
+WAN MODEL FRAME PROCESSING VISUALIZATION
+========================================
+
+INPUT VIDEO PROCESSING PIPELINE:
+--------------------------------
+
+1. INPUT VIDEO
+   [3 channels, F frames, 480 height, 832 width]
+            ↓ VAE Encoding (spatial downsampling 8x)
+            
+2. VAE ENCODED
+   [16 channels, F frames, 60 height, 104 width]
+            ↓ 3D Conv Patch Embedding (1,2,2)
+            
+3. PATCH EMBEDDED  
+   [2048 dim, F frames, 30 height, 52 width]
+            ↓ Flatten to sequence
+            
+4. SEQUENCE TOKENS
+   Actual tokens: F × 30 × 52 = F × 1,560
+   But ALWAYS padded to: 32,760 tokens (for 480×832)
+   
+   Example with different frame counts:
+   ┌─────────────────────────────────────────────────┐
+   │ 10 frames:  15,600 actual + 17,160 padding     │
+   │ 30 frames:  46,800 actual + CLIPS to 32,760    │
+   │ 81 frames: 126,360 actual + CLIPS to 32,760    │
+   └─────────────────────────────────────────────────┘
+            ↓ Transformer Attention
+            
+5. ATTENTION COMPUTATION
+   ALWAYS processes exactly 32,760 tokens
+   (Computation cost is FIXED regardless of frame count)
+
+
+KEY FORMULA:
+-----------
+seq_len = ceil((H/8 × W/8) / (2 × 2) × F / sp_size) × sp_size
+
+For 480×832: seq_len = 32,760 (CONSTANT)
+For 720×1280: seq_len = 75,600 (CONSTANT)
+
+
+COMPUTATION TIME COMPARISON:
+---------------------------
+
+10 frames:  ████████████████████████████████ (100%)
+30 frames:  ████████████████████████████████ (100%)  
+81 frames:  ████████████████████████████████ (100%)
+             ↑ ALL SAME COMPUTATION TIME! ↑
+
+
+WHY FRAME REDUCTION DOESN'T HELP:
+---------------------------------
+
+1. Sequence length is FIXED by spatial resolution
+2. Model ALWAYS pads/clips to fixed length
+3. Attention operates on FULL padded sequence
+4. Zero padding still requires computation
+
+The only ways to reduce computation:
+• Use lower resolution (480×832 vs 720×1280)
+• Reduce diffusion sampling steps
+• Model architecture changes (requires retraining)
