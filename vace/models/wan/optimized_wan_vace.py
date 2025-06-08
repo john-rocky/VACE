@@ -28,13 +28,14 @@ from wan.text2video import FlowDPMSolverMultistepScheduler, get_sampling_sigmas,
 class OptimizedWanVace(WanVace):
     """Performance-optimized version of WanVace with Flash Attention 2 and other optimizations"""
     
-    def __init__(self, *args, enable_flash_attn=True, enable_torch_compile=True, enable_frame_skip=False, **kwargs):
+    def __init__(self, *args, enable_flash_attn=True, enable_torch_compile=True, enable_frame_skip=False, enable_adaptive_steps=False, **kwargs):
         super().__init__(*args, **kwargs)
         
         self.enable_flash_attn = enable_flash_attn
         # Force disable torch.compile if environment variable is set
         self.enable_torch_compile = enable_torch_compile and os.environ.get('TORCH_COMPILE_DISABLE', '0') != '1'
         self.enable_frame_skip = enable_frame_skip
+        self.enable_adaptive_steps = enable_adaptive_steps
         
         # Enable CUDA optimizations
         if torch.cuda.is_available():
@@ -50,6 +51,9 @@ class OptimizedWanVace(WanVace):
         if self.enable_frame_skip:
             print("✓ Frame skip optimization enabled (2x speedup)")
             print("  → Will generate half frames and interpolate in latent space")
+        
+        if self.enable_adaptive_steps:
+            print("✓ Adaptive steps enabled (auto-adjust by resolution)")
         
         # Enable Flash Attention 2 if available
         if self.enable_flash_attn:
@@ -686,8 +690,44 @@ class OptimizedWanVace(WanVace):
         
         return result
     
+    def get_adaptive_steps(self, size, original_steps):
+        """Adaptively adjust sampling steps based on resolution"""
+        if not self.enable_adaptive_steps:
+            return original_steps
+            
+        # Resolution-based step adjustment
+        step_multipliers = {
+            (360, 640): 0.6,   # 360p: 60% of original steps
+            (480, 832): 0.8,   # 480p: 80% of original steps  
+            (720, 1280): 1.0,  # 720p: 100% (default)
+            (1080, 1920): 1.2, # 1080p: 120% of original steps
+        }
+        
+        # Find closest resolution
+        height, width = size
+        for (h, w), multiplier in step_multipliers.items():
+            if abs(height - h) < 50 and abs(width - w) < 100:
+                adaptive_steps = int(original_steps * multiplier)
+                print(f"  → Adaptive steps: {original_steps} → {adaptive_steps} for {height}x{width}")
+                return adaptive_steps
+                
+        return original_steps
+    
     def generate(self, *args, **kwargs):
         """Override generate method to use optimized encoding/decoding"""
+        # Apply adaptive steps if enabled
+        if self.enable_adaptive_steps:
+            size = args[5] if len(args) > 5 else kwargs.get('size', (720, 1280))
+            sampling_steps = args[10] if len(args) > 10 else kwargs.get('sampling_steps', 50)
+            adaptive_steps = self.get_adaptive_steps(size, sampling_steps)
+            
+            if len(args) > 10:
+                args = list(args)
+                args[10] = adaptive_steps
+                args = tuple(args)
+            else:
+                kwargs['sampling_steps'] = adaptive_steps
+        
         # If frame skip is enabled, use the frame skip method
         if self.enable_frame_skip:
             print(f"🚀 Frame skip activated - generating with interpolation")

@@ -127,6 +127,7 @@ class MemoryEfficientConfig:
         'enable_gradient_checkpointing': False,
         'clear_cache_steps': 20,
         'enable_frame_skip': False,  # Frame skip doesn't help WAN due to fixed seq length
+        'enable_adaptive_steps': True,  # Auto-adjust steps by resolution
         'reduce_steps': True,  # Reduce sampling steps
         'recommended_steps': 25,  # Half the default steps
         'recommended_resolution': '360p',  # Lower resolution for faster processing

@@ -43,6 +43,18 @@ python -m vace.vace_wan_inference \
     --frame_num 81 \
     --save_dir results/optimized_balanced/
 
+# ウルトラ速度モード（最大高速化）
+echo "Running WAN inference with ultra-speed optimization..."
+python -m vace.vace_wan_inference \
+    --ckpt_dir models/Wan2.1-VACE-1.3B/ \
+    --model_name vace-1.3B \
+    --use_optimized \
+    --optimization_mode ultra_speed \
+    --size 360p \
+    --frame_num 81 \
+    --sample_steps 25 \
+    --save_dir results/ultra_speed/
+
 # 通常モード（比較用）
 echo "Running WAN inference without optimization (for comparison)..."
 python -m vace.vace_wan_inference \
