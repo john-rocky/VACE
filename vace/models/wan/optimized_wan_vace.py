@@ -661,8 +661,18 @@ class OptimizedWanVace(WanVace):
             actual_frame_num = args[4] if len(args) > 4 else kwargs.get('frame_num')
             print(f"  → Actually generating {actual_frame_num} frames")
             
+            # Profile generation phases
+            import time
+            
+            # Time the actual generation (diffusion)
+            print(f"  → Starting diffusion with {actual_frame_num} frames...")
+            diff_start = time.time()
+            
             # Generate with half frames
             result = self.generate(*args, **kwargs)
+            
+            diff_end = time.time()
+            print(f"  → Diffusion completed in {diff_end - diff_start:.2f}s")
             
         finally:
             # Restore original settings
@@ -707,9 +717,27 @@ class OptimizedWanVace(WanVace):
             # Override timestep loop for optimization
             self._optimized_inference = True
             
-            # Call parent generate method with optimizations
-            with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16):
-                return super().generate(*args, **kwargs)
+            # Add hook to monitor model input sizes
+            def log_input_hook(module, input, output):
+                if hasattr(input[0], 'shape'):
+                    if not hasattr(module, '_logged_shape'):
+                        print(f"  → Model input shape: {input[0].shape}")
+                        module._logged_shape = True
+                
+            # Register hook on the main model
+            if hasattr(self.model, 'register_forward_hook'):
+                hook_handle = self.model.register_forward_hook(log_input_hook)
+            else:
+                hook_handle = None
+            
+            try:
+                # Call parent generate method with optimizations
+                with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16):
+                    return super().generate(*args, **kwargs)
+            finally:
+                # Remove hook
+                if hook_handle:
+                    hook_handle.remove()
             
         finally:
             # Restore original methods
