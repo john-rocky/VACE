@@ -625,7 +625,9 @@ class OptimizedWanVace(WanVace):
             else:
                 new_interpolated_latents = zs
             
-            print(f"  → Interpolating latents: {len(zs)} batches, {zs[0].shape[1] if len(zs) > 0 else 0} → {new_interpolated_latents[0].shape[1] if len(new_interpolated_latents) > 0 else 0} frames")
+            if len(zs) > 0 and len(new_interpolated_latents) > 0:
+                print(f"  → Interpolating latents: {len(zs)} batches, {zs[0].shape[1]} → {new_interpolated_latents[0].shape[1]} frames")
+                print(f"  → Latent shapes: {[z.shape for z in zs[:2]]}")  # Show first 2 shapes
             
             # Decode the interpolated latents
             return original_decode(new_interpolated_latents, ref_images, vae)
@@ -654,6 +656,10 @@ class OptimizedWanVace(WanVace):
             
             # Temporarily disable frame skip to avoid recursion
             self.enable_frame_skip = False
+            
+            # Log actual arguments being passed
+            actual_frame_num = args[4] if len(args) > 4 else kwargs.get('frame_num')
+            print(f"  → Actually generating {actual_frame_num} frames")
             
             # Generate with half frames
             result = self.generate(*args, **kwargs)
