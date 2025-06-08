@@ -590,34 +590,45 @@ class OptimizedWanVace(WanVace):
         # Get original frame_num
         frame_num = args[4] if len(args) > 4 else kwargs.get('frame_num', 81)
         
+        # Also reduce sampling steps for more speedup (optional)
+        reduce_steps = kwargs.get('reduce_steps_with_frame_skip', True)
+        
         # Store original decode_latent method
         original_decode = self.decode_latent
         interpolated_latents = []
         
         def decode_with_interpolation(zs, ref_images=None, vae=None):
             """Decode latents with interpolation in latent space"""
+            # Create new list for interpolated latents
+            new_interpolated_latents = []
+            
             # Interpolate in latent space before decoding
-            if len(zs) > 0 and len(zs[0]) > 1:
+            if len(zs) > 0:
                 for z_batch in zs:
-                    # z_batch shape: [channels, frames, height, width]
-                    interpolated = []
-                    for i in range(z_batch.shape[1] - 1):
-                        # Add original frame
-                        interpolated.append(z_batch[:, i:i+1])
-                        # Add interpolated frame
-                        interp_frame = (z_batch[:, i:i+1] + z_batch[:, i+1:i+2]) / 2
-                        interpolated.append(interp_frame)
-                    # Add last frame
-                    interpolated.append(z_batch[:, -1:])
-                    
-                    # Concatenate along frame dimension
-                    z_interp = torch.cat(interpolated, dim=1)
-                    interpolated_latents.append(z_interp[:, :frame_num])
+                    if z_batch.shape[1] > 1:  # Check temporal dimension
+                        # z_batch shape: [channels, frames, height, width]
+                        interpolated = []
+                        for i in range(z_batch.shape[1] - 1):
+                            # Add original frame
+                            interpolated.append(z_batch[:, i:i+1])
+                            # Add interpolated frame
+                            interp_frame = (z_batch[:, i:i+1] + z_batch[:, i+1:i+2]) / 2
+                            interpolated.append(interp_frame)
+                        # Add last frame
+                        interpolated.append(z_batch[:, -1:])
+                        
+                        # Concatenate along frame dimension
+                        z_interp = torch.cat(interpolated, dim=1)
+                        new_interpolated_latents.append(z_interp[:, :frame_num])
+                    else:
+                        new_interpolated_latents.append(z_batch)
             else:
-                interpolated_latents.extend(zs)
+                new_interpolated_latents = zs
+            
+            print(f"  → Interpolating latents: {len(zs)} batches, {zs[0].shape[1] if len(zs) > 0 else 0} → {new_interpolated_latents[0].shape[1] if len(new_interpolated_latents) > 0 else 0} frames")
             
             # Decode the interpolated latents
-            return original_decode(interpolated_latents, ref_images, vae)
+            return original_decode(new_interpolated_latents, ref_images, vae)
         
         # Generate half the frames
         half_frame_num = (frame_num + 1) // 2
@@ -629,6 +640,10 @@ class OptimizedWanVace(WanVace):
             kwargs['frame_num'] = half_frame_num
         
         print(f"  → Generating {half_frame_num} frames (will interpolate to {frame_num} in latent space)")
+        
+        # Get sampling steps for logging
+        sampling_steps = args[10] if len(args) > 10 else kwargs.get('sampling_steps', 50)
+        print(f"  → Sampling steps: {sampling_steps}")
         
         import time
         start_time = time.time()
